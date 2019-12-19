@@ -7,6 +7,7 @@
 # Version:      0.2.1
 # Date:         Oct 2018
 # Depends:      OpenSSL, Wget
+# Update:       Dec 2019
 #
 # Author:       Oleg Podgaisky (o-pod)
 # E-mail:       oleg-podgaisky@yandex.ru
@@ -38,13 +39,13 @@ function myExit {
 #
 # from FILE:
 if [ -n "${file}" ]; then
-    crt_file=$(echo ${*} | sed 's/\-[a-z]//gi' | sed 's/ //g')
+    crt_file=$(echo ${*} | sed 's/\-\b[a-z]\b//gi' | sed 's/ //g')
     if [ ! -f "${crt_file}" ]; then
         myExit 2 "ERROR: File ${crt_file} is not exist"
     fi
 # from DOMAIN:
 else
-    domain=$(echo ${*} | sed 's/\-[a-z]//gi' | sed 's/ //g')
+    domain=$(echo ${*} | sed 's/\-\b[a-z]\b//gi' | sed 's/ //g')
     if [ -z "${domain}" ]; then
         myExit 2 "ERROR: Domain is not defined"
     fi
