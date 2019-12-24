@@ -77,6 +77,7 @@ fi
 ### Get a Issuer, Serial, OCSP and other information of the certificate
 #
 crt_serial=$(openssl x509 -in ${crt_file} -noout -serial | cut -d"=" -f2)
+ocsp_url=$(openssl x509 -in ${crt_file} -noout -ocsp_uri)
 if [ -n "${verbose}" ]; then
     echo "=== Certificate details ==="
     crt_subject=$(openssl x509 -in ${crt_file} -noout -subject | sed 's/^subject=//')
@@ -88,7 +89,6 @@ if [ -n "${verbose}" ]; then
     echo "Start date: ${crt_startdate}"
     crt_enddate=$(openssl x509 -in ${crt_file} -noout -enddate | sed 's/^notAfter=//')
     echo "End date: ${crt_enddate}"
-    ocsp_url=$(openssl x509 -in ${crt_file} -noout -ocsp_uri)
     echo "OCSP server: ${ocsp_url}"
 fi
 
@@ -103,7 +103,31 @@ if [ -z "${crl_url}" ]; then
     if [ -n "${domain}" ]; then
         rm ${crt_file} 2>/dev/null
     fi
-    myExit 2 "ERROR: CRL is not present"
+    if [ -n "${ocsp_url}" ]; then
+        if [ -n "${verbose}" ]; then
+            echo "WARNING: CRL is not present, trying OCSP"
+        fi
+        chain_file="${path}/${domain}.chain"
+        echo -n | openssl s_client -connect ${domain}:443 -showcerts 2>&1 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > ${chain_file}
+        # revoked.badssl.com returns one cert in chain
+        if [ ! -s ${chain_file} ]; then
+            myExit 2 "ERROR: failed to get certificate chain"
+        fi
+        awk -v cert="${chain_file}" '
+            split_after == 1 {n++;split_after=0}
+            /-----END CERTIFICATE-----/ {split_after=1}
+            {print > cert ".crt" n}' < ${chain_file}
+        cat "${chain_file}".crt[0-9] > "${chain_file}.intermediate"
+        ocsp_res=$(openssl ocsp -url ${ocsp_url} -issuer "${chain_file}.intermediate" -cert "${chain_file}.crt" -text 2>&1 | grep 'Cert Status')
+        grep -q 'Cert Status: good' <<< ${ocsp_res}
+        if [ $? -eq 0 ]; then
+            myExit 0 "OCSP result: good"
+        else
+            myExit 1 "OCSP result:${ocsp_res}"
+        fi
+    else
+        myExit 2 "ERROR: neither CRL nor OCSP are present"
+    fi
 fi
 if [ -n "${verbose}" ]; then
     echo "CRL from: ${crl_url}"
